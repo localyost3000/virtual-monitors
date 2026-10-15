@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.virtual-monitors"
+          path="/org/gnome/shell/extensions/virtual-monitors/">
+    <key name="toggle-active" type="as">
+      <default><![CDATA[['<Super><Alt>0']]]></default>
+      <summary>Suspend/resume all Virtual Monitors behavior (failsafe)</summary>
+    </key>
+    <key name="layout-single" type="as">
+      <default><![CDATA[['<Super><Alt>1']]]></default>
+      <summary>Switch focused monitor to single-region layout</summary>
+    </key>
+    <key name="layout-dual" type="as">
+      <default><![CDATA[['<Super><Alt>2']]]></default>
+      <summary>Switch focused monitor to dual-region layout</summary>
+    </key>
+    <key name="window-left" type="as">
+      <default><![CDATA[['<Ctrl><Super><Alt>Left']]]></default>
+      <summary>Move focused window to previous region</summary>
+    </key>
+    <key name="window-right" type="as">
+      <default><![CDATA[['<Ctrl><Super><Alt>Right']]]></default>
+      <summary>Move focused window to next region</summary>
+    </key>
+    <key name="layout-theater" type="as">
+      <default><![CDATA[['<Super><Alt>3']]]></default>
+      <summary>Switch focused monitor to theater layout (25/50/25)</summary>
+    </key>
+    <key name="layout-thirds" type="as">
+      <default><![CDATA[['<Super><Alt>4']]]></default>
+      <summary>Switch focused monitor to thirds layout</summary>
+    </key>
+    <key name="layout-mainside" type="as">
+      <default><![CDATA[['<Super><Alt>5']]]></default>
+      <summary>Switch focused monitor to main+side layout (70/30)</summary>
+    </key>
+    <key name="layout-dynamic" type="as">
+      <default><![CDATA[['<Super><Alt>6']]]></default>
+      <summary>Switch focused monitor to the dynamic layout (build splits with the select/split/close hotkeys)</summary>
+    </key>
+    <key name="swap-left" type="as">
+      <default><![CDATA[['<Shift><Ctrl><Super><Alt>Left']]]></default>
+      <summary>Swap focused window with window in previous region</summary>
+    </key>
+    <key name="swap-right" type="as">
+      <default><![CDATA[['<Shift><Ctrl><Super><Alt>Right']]]></default>
+      <summary>Swap focused window with window in next region</summary>
+    </key>
+    <key name="grow-region" type="as">
+      <default><![CDATA[['<Super><Alt>comma']]]></default>
+      <summary>Grow focused window's region by 5% of monitor width</summary>
+    </key>
+    <key name="shrink-region" type="as">
+      <default><![CDATA[['<Super><Alt>period']]]></default>
+      <summary>Shrink focused window's region by 5% of monitor width</summary>
+    </key>
+    <key name="select-prev" type="as">
+      <default><![CDATA[['<Super><Alt>bracketleft']]]></default>
+      <summary>Select the previous region (dynamic layout only)</summary>
+    </key>
+    <key name="select-next" type="as">
+      <default><![CDATA[['<Super><Alt>bracketright']]]></default>
+      <summary>Select the next region (dynamic layout only)</summary>
+    </key>
+    <key name="split-region" type="as">
+      <default><![CDATA[['<Super><Alt>slash']]]></default>
+      <summary>Split the selected region into two halves (dynamic layout only)</summary>
+    </key>
+    <key name="close-region" type="as">
+      <default><![CDATA[['<Super><Alt>x']]]></default>
+      <summary>Close the selected region; its sibling takes over the space (dynamic layout only)</summary>
+    </key>
+    <key name="default-layout" type="s">
+      <default>'single'</default>
+      <summary>Layout for monitors that have not been switched yet</summary>
+    </key>
+    <key name="debug" type="b">
+      <default>false</default>
+      <summary>Verbose per-window event logging</summary>
+    </key>
+    <key name="fake-monitors" type="b">
+      <default>false</default>
+      <summary>Present layout regions as monitors so dash-to-panel renders one panel per region (experimental)</summary>
+    </key>
+    <key name="fake-min-region-fraction" type="d">
+      <default>0.25</default>
+      <range min="0" max="0.5"/>
+      <summary>Only regions at least this wide (fraction of monitor width) get a panel via fake monitors; 0 = every region</summary>
+    </key>
+  </schema>
+</schemalist>

@@ -1,0 +1,79 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  release:
+    types: [published]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y gjs libglib2.0-dev && npm i
+      - name: Syntax check
+        run: npm run lint
+      - name: Layout tests (node + gjs)
+        run: npm run test
+      - name: Schema compiles (strict)
+        run: glib-compile-schemas --strict --dry-run extension/schemas/
+
+  # single-purpose pack job; extend with a gnome-shell version matrix when
+  # supporting multiple shell versions
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pack tool
+        run: sudo apt-get update && sudo apt-get install -y gnome-shell python3-venv
+      - name: Pack extension zip
+        run: |
+          rm -rf dist
+          mkdir -p dist
+          cd extension
+          gnome-extensions pack --force --out-dir=../dist \
+            --extra-source=geometry.js --extra-source=layout.js \
+            --extra-source=monitors.js --extra-source=prefs.js \
+            --extra-source=ratelimit.js --extra-source=workspace-animation.js \
+            --extra-source=../LICENSE
+      - name: Verify zip completeness
+        run: |
+          zip=$(ls dist/*.zip)
+          for f in extension/*.js extension/metadata.json extension/LICENSE; do
+            b=$(basename "$f")
+            unzip -Z1 $zip | grep -qx "$b" || { echo "zip missing: $b"; exit 1; }
+          done
+          unzip -Z1 $zip | grep -q 'schemas/.*\.gschema\.xml' || { echo "zip missing schema XML"; exit 1; }
+          if unzip -Z1 $zip | grep -qx gschemas.compiled; then
+            echo "zip must not ship gschemas.compiled"; exit 1
+          fi
+          unzip -Z1 $zip
+      - name: Static review (shexli, same analyzer as the EGO upload review)
+        run: |
+          python3 -m venv /tmp/shexli-venv
+          /tmp/shexli-venv/bin/pip install --quiet "shexli==0.2.1" "tree-sitter!=0.26.0"
+          /tmp/shexli-venv/bin/shexli dist/*.zip --format json > shexli.json
+          cat shexli.json
+          python3 -c "import json,sys; s=json.load(open('shexli.json'))['summary']; print('shexli:', s['status'], '-', s['finding_count'], 'findings'); sys.exit(1 if s['finding_count'] else 0)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: virtual-monitors-zip
+          path: dist/*.zip
+
+  release-asset:
+    needs: [test, build]
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: virtual-monitors-zip
+          path: dist
+      - name: Upload zip to release
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.zip --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

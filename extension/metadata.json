@@ -1,0 +1,9 @@
+{
+  "uuid": "virtual-monitors@localyost3000",
+  "name": "Virtual Monitors",
+  "description": "Subdivide physical displays into virtual monitor regions. Fullscreen apps confine to their region.",
+  "version": 2,
+  "shell-version": ["50"],
+  "settings-schema": "org.gnome.shell.extensions.virtual-monitors",
+  "url": "https://github.com/localyost3000/virtual-monitors"
+}

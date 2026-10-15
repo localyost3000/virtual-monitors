@@ -1,0 +1,24 @@
+{
+  "name": "virtual-monitors",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "conc 'node test/run.js' 'gjs -m test/run.js'",
+    "repro": "sh scripts/headless-repro.sh",
+    "schema:compile": "glib-compile-schemas --strict extension/schemas/",
+    "lint": "conc 'node --check extension/*.js' 'eslint extension'",
+    "lint:fix": "eslint --fix extension",
+    "format": "prettier -w extension test",
+    "build": ""
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "concurrently": "10.0.6",
+    "eslint": "10.13.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-simple-import-sort": "14.0.0",
+    "eslint-plugin-unused-imports": "4.4.1",
+    "prettier": "3.9.10"
+  }
+}
