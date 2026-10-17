@@ -77,3 +77,5 @@ jobs:
         run: gh release upload "$GITHUB_REF_NAME" dist/*.zip --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # this job has no checkout; gh would try git to resolve the repo
+          GH_REPO: ${{ github.repository }}
