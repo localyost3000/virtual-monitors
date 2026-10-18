@@ -102,6 +102,12 @@ Design records for the internals live in `.plans/`.
   shows the wallpaper's solid primary colour for 1-2 frames; same-layout
   switches are clean
   (`.plans/2026-10-16_03_workspace_switch_animation.md`).
+- Desktop icons (`ding@rastersoft.com`): it recreates its per-region
+  windows on every layout change, and one recreated while a desktop switch
+  is in flight can miss Desktop Icons' own setup — it then floats above
+  your windows as a taskbar entry until the next switch. The extension
+  re-runs that setup for the misses, so they adopt within half a second
+  (`.plans/2026-10-17_00_ding_desktop_window_adoption.md`).
 - Split hotkey assigns regions only; it never moves/fills existing windows.
 - Grow/shrink nudges are runtime-only: splits reset to the layout template
   at shell restart. Windows keep their geometry on nudge; they re-fill on
@@ -283,9 +289,11 @@ before the nested shell ever sees them.
 Boots a scratch headless shell 50 (virtual monitor, keyfile settings under
 a temp dir — your session is never touched), sets per-desktop layouts,
 switches desktops like the keybinding does, asserts the per-desktop
-invariants, then drives the dynamic layout (select/split/close) end to end
-(`.plans/2026-10-16_02_headless_repro_harness.md`). Prints `REPRO ...` dumps
-and a final `REPRO RESULT: PASS`/FAIL; the exit code follows it. Modes
+invariants, drives the dynamic layout (select/split/close) end to end, and
+exercises the region-aware switch animation and the desktop-icons adoption
+heal (`.plans/2026-10-16_02_headless_repro_harness.md`,
+`.plans/2026-10-17_00_ding_desktop_window_adoption.md`). Prints `REPRO ...`
+dumps and a final `REPRO RESULT: PASS`/FAIL; the exit code follows it. Modes
 `all|min|ding|dtp` pick which extensions load; `all` (default) is the full
 devkit replica and includes the desktop-icons case that used to prune
 configured desktops. Needs the extension installed at the standard path

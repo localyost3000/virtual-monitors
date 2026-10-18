@@ -26,11 +26,16 @@ import {
   uninstall as uninstallAnimationPatch,
 } from './workspace-animation.js'
 
-const BUILD = '2026-10-17T16:07' // bump every edit round; logged at enable
+const BUILD = '2026-10-17T18:05' // bump every edit round; logged at enable
 const DEBUG = false // hard flip for dev; soft toggle: 'debug' settings key
 // Configured desktops are marked in-use in the shell's dynamic-workspace
 // check for this long (re-armed on layout edits and desktop switches).
 const KEEP_ALIVE_MS = 24 * 60 * 60 * 1000
+// Desktop Icons (DING) keeps one desktop window per region and recreates
+// them when the count changes; its adoption of the new windows can miss
+// (see _healDingWindow) — let its map-driven path settle first, then fix.
+const DING_UUID = 'ding@rastersoft.com'
+const DING_HEAL_MS = 500
 const BINDING_NAMES = [
   'toggle-active',
   'layout-single',
@@ -266,6 +271,17 @@ export default class VirtualMonitorsExtension extends Extension {
       w.connect('workspace-changed', () => this._onWindowWorkspace(w)),
       w.connect('unmanaged', () => this._cleanup(w)),
     ])
+    // DING (Desktop Icons) recreates its per-region desktop windows whenever
+    // the region count changes — every switch to a desktop with a different
+    // layout. A recreation that lands while the switch is in flight misses
+    // DING's own adoption: that runs off the window-manager 'map' signal,
+    // which mutter never emits for such windows, and the window is left
+    // floating above the user's windows as a focusable taskbar entry until
+    // the next recreation. Let its map path settle, then fix up the misses.
+    this._timeout(DING_HEAL_MS, () => {
+      this._healDingWindow(w)
+      return GLib.SOURCE_REMOVE
+    })
     // geometry not final at window-created; assign region on idle.
     // Split layout: new windows auto-fit into the region under their
     // center, so each region stacks windows like its own monitor.
@@ -288,6 +304,41 @@ export default class VirtualMonitorsExtension extends Extension {
       }
       return GLib.SOURCE_REMOVE
     })
+  }
+
+  // See _onCreated; details in
+  // `.plans/2026-10-17_00_ding_desktop_window_adoption.md`. DING's adoption
+  // does the whole desktop-window setup (desktop type, keep-at-bottom, all
+  // desktops, hidden from the window list, fixed position), so re-run it
+  // instead of duplicating it here. Feature-detected and best-effort: DING
+  // may be absent, disabled or a different version after a shell update,
+  // and only windows its current process owns are touched — anything
+  // already adopted (customJS_ding, desktop type) or not its own (X11
+  // session, other clients) is left alone.
+  _healDingWindow(w) {
+    try {
+      if (
+        !this._active ||
+        !w.get_compositor_private() ||
+        w.customJS_ding ||
+        w.get_window_type() !== Meta.WindowType.NORMAL
+      ) {
+        return
+      }
+      const ding = Main.extensionManager.lookup(DING_UUID)?.stateObj
+      const x11 = ding?.data?.x11Manager
+      const cp = ding?.data?.currentProcess
+      if (!x11 || typeof x11.addWindow !== 'function' || !cp?.process_running) {
+        return
+      }
+      if (!cp._waylandClient?.owns_window?.(w)) {
+        return
+      }
+      this._dbg(`ding window missed adoption, re-adopting: "${w.get_title()}"`)
+      x11.addWindow(w)
+    } catch (e) {
+      this._dbg(`ding re-adopt failed: ${e.message}`)
+    }
   }
 
   _cleanup(w) {

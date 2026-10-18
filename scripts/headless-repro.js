@@ -1,5 +1,6 @@
-// Headless integration run for per-desktop regions (F1) and dynamic
-// splits (F2).
+// Headless integration run for per-desktop regions (F1), dynamic
+// splits (F2), the workspace-switch animation and desktop-icons
+// adoption.
 // Booted by scripts/headless-repro.sh inside a scratch headless
 // gnome-shell 50; see that script for the environment details.
 //
@@ -14,6 +15,8 @@
 //   - select/split/close no-op outside the dynamic layout
 //   - split/close reshape the regions and re-present the fake monitors
 //   - a layout switch clears the selection highlight
+//   - a window is cloned into the animation region it overlaps
+//   - desktop-icons windows recreated mid-switch end up adopted
 //
 // Prints REPRO dumps, REPRO CHECK lines, and a final
 // "REPRO RESULT: PASS|FAIL (n/m checks)" that the shell script gates on.
@@ -24,7 +27,9 @@
 // dynamic-workspace cleanup delete the empty desktop just left — and the
 // stored layout with it.
 
+import Gio from 'gi://Gio'
 import GLib from 'gi://GLib'
+import Meta from 'gi://Meta'
 import * as Main from 'resource:///org/gnome/shell/ui/main.js'
 
 const UUID = 'virtual-monitors@localyost3000'
@@ -245,14 +250,17 @@ async function main() {
   check('both configured desktops alive', alive(wsA) && alive(wsB))
   check('layouts: no dead desktops stored', layoutsHealthy(so))
 
-  // Animation probe first: it needs ding's per-region windows, which the
-  // F2 probe's region churn destroys (ding recreates them only on a
-  // monitors-changed emit; the F2 probe's final reflows can be no-ops).
-  // See _03.
+  // Animation probe first: it exercises the current desktop's layout
+  // before the F2 churn reshapes it repeatedly (see _03). It spawns its
+  // own window, so it does not depend on desktop-icons windows existing.
   await animationProbe()
 
   // F2: dynamic layout select/split/close end to end (see _01)
   await dynamicProbe(so, mgr.get_active_workspace())
+
+  // Desktop-icons adoption: nothing may be left floating over the user's
+  // windows after layout-changing switches and splits (see _00 of 10-17)
+  await dingProbe(so)
 }
 
 // F2 dynamic hotkeys driven the way the bindings do (method calls: the
@@ -349,37 +357,87 @@ async function dynamicProbe(so, ws) {
   check('F2: layout switch clears the selection', so._sel === null && !so._selOverlay)
 }
 
-async function waitForWindows(timeoutMs) {
-  let n = 0
-  for (let i = 0; i < timeoutMs / 200 && n === 0; i++) {
-    n = global.get_window_actors().filter((a) => a.get_meta_window()).length
-    if (n === 0) await sleep(200)
-  }
-  return n
+// desktop-icons windows are hidden from get_window_actors by ding itself,
+// so enumerate the display's full window list; titles are "Desktop Icons
+// <n>" at creation and "@!x,y;BDHF" once positioned.
+function dingWindows() {
+  return (global.display.list_all_windows?.() ?? []).filter((w) => {
+    const t = w.get_title() ?? ''
+    return t.startsWith('Desktop Icons ') || /^@!-?\d+,-?\d+;/.test(t)
+  })
 }
 
-// the shell builds one animation group per layoutManager.monitors entry;
-// its cloning predicate must be region-aware (see _03)
+// a desktop-icons window that missed ding's adoption: still a normal,
+// non-sticky, taskbar-visible window floating above the user's windows.
+function dingOrphans() {
+  return dingWindows().filter(
+    (w) =>
+      w.get_window_type() !== Meta.WindowType.DESKTOP ||
+      !w.is_on_all_workspaces() ||
+      !w.skip_taskbar,
+  )
+}
+
+function overlaps(a, b) {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+}
+
+// ---------------- animation probe ----------------
+//
+// The shell builds one animation group per layoutManager.monitors entry, so
+// with fake monitors the group boxes already follow the regions. Which
+// windows each group shows is decided by BaseWorkspaceGroup
+// ._windowIsOnThisMonitor, which mutter answers with real-monitor geometry
+// only: a window on a fake region (index >= 1) gets no clone and the region
+// swaps instantly while region 0 slides (see _03). The probe parks a normal
+// window in the last region to exercise that predicate — ding's own desktop
+// windows are desktop type and hidden from the very window list the
+// animation clones from, so they cannot play this part.
+async function spawnProbeWindow() {
+  let proc
+  try {
+    proc = Gio.Subprocess.new(
+      ['/usr/bin/zenity', '--info', '--title=repro-anim', '--text=animation probe', '--no-wrap'],
+      Gio.SubprocessFlags.NONE,
+    )
+  } catch {
+    return { proc: null, win: null }
+  }
+  let win = null
+  for (let i = 0; i < 40 && !win; i++) {
+    win =
+      (global.display.list_all_windows?.() ?? []).find((w) => w.get_title() === 'repro-anim') ??
+      null
+    if (!win) await sleep(200)
+  }
+  if (!win) return { proc, win: null }
+  // Park it in the last region. The extension fits new windows on map and
+  // the maximize/unmaximize round that follows restores the pre-fit
+  // position, so let that settle, then move until the position sticks.
+  await sleep(700)
+  const monitors = Main.layoutManager.monitors
+  const last = monitors[monitors.length - 1]
+  for (let i = 0; i < 10; i++) {
+    win.move_frame(true, last.x + 20, last.y + 20)
+    await sleep(250)
+    const r = win.get_frame_rect()
+    if (r.x >= last.x && r.x < last.x + last.width) break
+  }
+  return { proc, win }
+}
+
 async function animationProbe() {
-  const ding = Main.extensionManager.lookup(DING)
-  if (ding?.state !== 1) {
-    printerr('REPRO CHECK skip animation (no window source in this mode)')
+  if (Main.layoutManager.monitors.length < 2) {
+    printerr('REPRO CHECK skip animation (single region)')
     return
   }
-  // ding (re)creates its per-region icon windows on desktop arrival; if
-  // they are not up yet, cycle one desktop away and probe the switch back
-  let direction = -1
-  if (!(await waitForWindows(1500))) {
-    printerr('REPRO   animation: no windows yet, exercising an arrival cycle')
-    switchNeighbor(-1)
-    await sleep(900)
-    if (!(await waitForWindows(8000))) {
-      printerr('REPRO CHECK skip animation (ding windows never appeared)')
-      return
-    }
-    direction = +1
+  const { proc, win } = await spawnProbeWindow()
+  if (!win) {
+    printerr('REPRO CHECK skip animation (probe window did not appear)')
+    proc?.force_exit()
+    return
   }
-  switchNeighbor(direction)
+  switchNeighbor(mgr.get_active_workspace_index() > 0 ? -1 : +1)
 
   let data = null
   for (let i = 0; i < 100 && !data; i++) {
@@ -388,20 +446,31 @@ async function animationProbe() {
   }
   if (!data) {
     check('animation: switch groups appeared', false)
+    proc.force_exit()
     return
   }
+  const rect = win.get_frame_rect()
   const groups = data.monitors.map((g) => ({
     index: g.index,
-    clones: g._workspaceGroups.reduce((n, wg) => n + wg._windowRecords.length, 0),
+    overlap: overlaps(rect, g._monitor),
+    clones: g._workspaceGroups.reduce(
+      (n, wg) =>
+        n + wg._windowRecords.filter((r) => r.windowActor.get_meta_window() === win).length,
+      0,
+    ),
   }))
-  printerr(`REPRO   animation groups=[${groups.map((g) => `m${g.index}:${g.clones}`).join(' ')}]`)
-  // groups are built from the destination desktop's layout (fakes switch
-  // before the shell constructs them), so compare with the current count
-  const expected = Main.layoutManager.monitors.length
-  check('animation: one group per region', groups.length === expected)
+  printerr(
+    `REPRO   animation rect=${rect.x},${rect.y} ${rect.width}x${rect.height} ` +
+      `groups=[${groups.map((g) => `m${g.index}:${g.clones}${g.overlap ? '!' : ''}`).join(' ')}]`,
+  )
+  check('animation: one group per region', groups.length === Main.layoutManager.monitors.length)
   check(
-    'animation: every region has clones',
-    groups.every((g) => g.clones >= 1),
+    'animation: window clones land only in the regions it overlaps',
+    groups.every((g) => (g.overlap ? g.clones > 0 : g.clones === 0)),
+  )
+  check(
+    'animation: fake region clones its window',
+    groups.some((g) => g.index > 0 && g.overlap && g.clones > 0),
   )
 
   // Sliding wallpaper actors must have real geometry: the stock path asks
@@ -431,9 +500,81 @@ async function animationProbe() {
       ),
   )
 
-  // let the switch finish before terminating
+  // let the switch finish before taking the probe window down
   for (let i = 0; i < 100 && Main.wm?._workspaceAnimation?._switchData; i++) await sleep(10)
   await sleep(150)
+  proc.force_exit()
+  await sleep(200)
+}
+
+// ---------------- desktop-icons adoption probe ----------------
+//
+// ding recreates its per-region desktop windows whenever the region count
+// changes — every switch to a desktop with a different layout. A recreation
+// that lands while the switch is in flight misses ding's own adoption (it
+// runs off the window-manager 'map' signal, which mutter never emits for
+// such windows) and used to stay a normal, floating window: the duplicated
+// "Desktop Icons" windows reported over the user's apps. The extension
+// re-runs ding's adoption for the windows it missed (see _00 of 10-17);
+// nothing may be left floating.
+async function dingProbe(so) {
+  const ding = Main.extensionManager.lookup(DING)
+  if (ding?.state !== 1) {
+    printerr('REPRO CHECK skip desktop-icons adoption (no ding in this mode)')
+    return
+  }
+  let waited = 0
+  while (!dingWindows().length && waited < 10000) {
+    await sleep(250)
+    waited += 250
+  }
+  if (!dingWindows().length) {
+    printerr('REPRO CHECK skip desktop-icons adoption (no ding windows appeared)')
+    return
+  }
+  const report = (label) => {
+    printerr(
+      `REPRO   ${label} desktop-icons=[${dingWindows()
+        .map(
+          (w) =>
+            `${w.get_window_type() === Meta.WindowType.DESKTOP ? 'desktop' : 'FLOATING'}` +
+            `${w.is_on_all_workspaces() ? '/sticky' : '/loose'}` +
+            `${w.skip_taskbar ? '/hidden' : '/LISTED'}:${w.get_title()}`,
+        )
+        .join(' ')}]`,
+    )
+    const floating = dingOrphans()
+    check(`desktop icons: ${label}`, floating.length === 0)
+  }
+
+  // this desktop: two regions, the neighbor gets one; every switch between
+  // them changes the count, so arrivals recreate the desktop windows
+  so._setLayout(0, 'dual')
+  await sleep(400)
+  if (!switchNeighbor(+1) && !switchNeighbor(-1)) {
+    printerr('REPRO CHECK skip desktop-icons adoption (no neighbor desktop)')
+    return
+  }
+  await sleep(900)
+  so._setLayout(0, 'single')
+  await sleep(400)
+  switchNeighbor(-1)
+  await sleep(1600) // switch + recreate + adoption settle
+  report('adopted after layout-changing round trip')
+
+  // the reported path: dynamic-split on the other desktop, then return
+  switchNeighbor(+1)
+  await sleep(900)
+  so._setLayout(0, 'dynamic')
+  await sleep(300)
+  const ws = mgr.get_active_workspace()
+  so._setSelection({ monitor: 0, ws, leafId: leafIds(so, 0, ws)[0] })
+  so._splitRegion()
+  await sleep(600)
+  report('adopted after dynamic split')
+  switchNeighbor(-1)
+  await sleep(1600)
+  report('adopted after split-and-return')
 }
 
 export function init() {
