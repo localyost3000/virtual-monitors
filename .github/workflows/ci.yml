@@ -10,7 +10,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y gjs libglib2.0-dev && npm i
       - name: Syntax check
@@ -25,7 +25,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install pack tool
         run: sudo apt-get update && sudo apt-get install -y gnome-shell python3-venv
       - name: Pack extension zip
@@ -57,7 +57,7 @@ jobs:
           /tmp/shexli-venv/bin/shexli dist/*.zip --format json > shexli.json
           cat shexli.json
           python3 -c "import json,sys; s=json.load(open('shexli.json'))['summary']; print('shexli:', s['status'], '-', s['finding_count'], 'findings'); sys.exit(1 if s['finding_count'] else 0)"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: virtual-monitors-zip
           path: dist/*.zip
